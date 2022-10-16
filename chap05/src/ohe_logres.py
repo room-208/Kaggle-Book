@@ -1,4 +1,3 @@
-from numpy import full
 import pandas as pd
 from sklearn import linear_model, metrics, preprocessing
 

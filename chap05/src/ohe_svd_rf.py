@@ -1,5 +1,6 @@
 import pandas as pd
-from sklearn import ensemble, metrics, preprocessing
+from scipy import sparse
+from sklearn import decomposition, ensemble, metrics, preprocessing
 
 
 def run(fold):
@@ -13,11 +14,6 @@ def run(fold):
     for col in features:
         df[col] = df[col].astype(str).fillna("NONE")
 
-    for col in features:
-        lbl = preprocessing.LabelEncoder()
-        lbl.fit(df[col].values)
-        df[col] = lbl.transform(df[col].values)
-
     df_train = df[df["kfold"] != fold].reset_index(drop=True)
     df_valid = df[df["kfold"] == fold].reset_index(drop=True)
 
@@ -25,10 +21,24 @@ def run(fold):
         print(df_train)
         print(df_valid)
 
-    X_train = df_train[features].values
+    ohe = preprocessing.OneHotEncoder()
+
+    full_data = pd.concat([df_train[features], df_valid[features]])
+
+    ohe.fit(full_data[features].values)
+
+    X_train = ohe.transform(df_train[features].values)
     y_train = df_train["target"].values
-    X_valid = df_valid[features].values
+    X_valid = ohe.transform(df_valid[features].values)
     y_valid = df_valid["target"].values
+
+    svd = decomposition.TruncatedSVD(n_components=120)
+
+    full_sparse = sparse.vstack((X_train, X_valid))
+    svd.fit(full_sparse)
+
+    X_train = svd.transform(X_train)
+    X_valid = svd.transform(X_valid)
 
     model = ensemble.RandomForestClassifier(n_jobs=-1)
     model.fit(X_train, y_train)

@@ -1,5 +1,6 @@
 import pandas as pd
-from sklearn import ensemble, metrics, preprocessing
+import xgboost as xgb
+from sklearn import metrics, preprocessing
 
 
 def run(fold):
@@ -30,7 +31,7 @@ def run(fold):
     X_valid = df_valid[features].values
     y_valid = df_valid["target"].values
 
-    model = ensemble.RandomForestClassifier(n_jobs=-1)
+    model = xgb.XGBClassifier(n_jobs=-1, max_depth=7, n_estimators=200)
     model.fit(X_train, y_train)
 
     valid_preds = model.predict_proba(X_valid)[:, 1]

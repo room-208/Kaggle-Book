@@ -12,6 +12,7 @@ scikit-learn = "*"
 ipykernel = "*"
 black = "*"
 scipy = "*"
+xgboost = "*"
 
 [dev-packages]
 

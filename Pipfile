@@ -10,6 +10,7 @@ pandas = "*"
 seaborn = "*"
 scikit-learn = "*"
 ipykernel = "*"
+black = "*"
 
 [dev-packages]
 

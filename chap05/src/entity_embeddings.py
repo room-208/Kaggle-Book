@@ -87,13 +87,11 @@ class EntityEmbed(nn.Module):
 
         self.fc2 = nn.Linear(embed_dim_sum, 300)
         nn.init.kaiming_normal_(self.fc2.weight.data)
-        self.relu2 = nn.ReLU()
         self.drop2 = nn.Dropout(p=0.3)
         self.bn2 = nn.BatchNorm1d(300)
 
         self.fc3 = nn.Linear(300, 300)
         nn.init.kaiming_normal_(self.fc3.weight.data)
-        self.relu3 = nn.ReLU()
         self.drop3 = nn.Dropout(p=0.3)
         self.bn3 = nn.BatchNorm1d(300)
 
@@ -110,13 +108,11 @@ class EntityEmbed(nn.Module):
         out = self.bn1(out)
         out = self.drop1(out)
 
-        out = self.fc2(out)
-        out = self.relu2(out)
+        out = F.relu(self.fc2(out))
         out = self.drop2(out)
         out = self.bn2(out)
 
-        out = self.fc3(out)
-        out = self.relu3(out)
+        out = F.relu(self.fc3(out))
         out = self.drop3(out)
         out = self.bn3(out)
 

@@ -62,6 +62,7 @@ if __name__ == "__main__":
             test_df = df[df["kfold"] == fold].reset_index(drop=True)
 
             count_vec = TfidfVectorizer(tokenizer=word_tokenize, token_pattern=None)
+            print(train_df["review"])
 
             count_vec.fit(train_df["review"])
             print(len(count_vec.vocabulary_))
@@ -71,6 +72,12 @@ if __name__ == "__main__":
             X_test = count_vec.transform(test_df["review"])
             print("transform end")
 
+            print(X_train)
+            """
+            for i, x in enumerate(X_train):
+                print(i)
+                print(x)
+            """
             model = xgb.XGBClassifier(n_jobs=-1, max_depth=7, n_estimators=200)
             model.fit(X_train, train_df["sentiment"])
 

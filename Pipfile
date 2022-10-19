@@ -17,6 +17,7 @@ tensorflow = "*"
 keras = "*"
 torch = "*"
 tqdm = "*"
+nltk = "*"
 
 [dev-packages]
 

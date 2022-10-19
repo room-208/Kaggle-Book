@@ -6,6 +6,66 @@ from sklearn import metrics, preprocessing
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 import torch.nn.functional as F
+import numpy as np
+
+
+def reduce_mem_usage(df, verbose=True):
+    """
+    Reduce file memory usage
+    Source: https://www.kaggle.com/artgor
+
+    Parameters:
+    -----------
+    df: DataFrame
+        Dataset on which to perform transformation
+    verbose: bool
+        Print additional information
+    Returns:
+    --------
+    DataFrame
+        Dataset as pandas DataFrame
+    """
+    numerics = ["int16", "int32", "int64", "float16", "float32", "float64"]
+    start_mem = df.memory_usage().sum() / 1024**2
+    for col in df.columns:
+        col_type = df[col].dtypes
+        if col_type in numerics:
+            c_min = df[col].min()
+            c_max = df[col].max()
+            if str(col_type)[:3] == "int":
+                if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
+                    df[col] = df[col].astype(np.int8)
+                elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
+                    df[col] = df[col].astype(np.int16)
+                elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
+                    df[col] = df[col].astype(np.int32)
+                elif c_min > np.iinfo(np.int64).min and c_max < np.iinfo(np.int64).max:
+                    df[col] = df[col].astype(np.int64)
+            else:
+                c_prec = df[col].apply(lambda x: np.finfo(x).precision).max()
+                if (
+                    c_min > np.finfo(np.float16).min
+                    and c_max < np.finfo(np.float16).max
+                    and c_prec == np.finfo(np.float16).precision
+                ):
+                    df[col] = df[col].astype(np.float16)
+                elif (
+                    c_min > np.finfo(np.float32).min
+                    and c_max < np.finfo(np.float32).max
+                    and c_prec == np.finfo(np.float32).precision
+                ):
+                    df[col] = df[col].astype(np.float32)
+                else:
+                    df[col] = df[col].astype(np.float64)
+    end_mem = df.memory_usage().sum() / 1024**2
+    if verbose:
+        print(
+            "Mem. usage decreased to {:5.2f} Mb ({:.1f}% reduction)".format(
+                end_mem, 100 * (start_mem - end_mem) / start_mem
+            )
+        )
+
+    return df
 
 
 class EntityEmbed(nn.Module):
@@ -15,37 +75,40 @@ class EntityEmbed(nn.Module):
         self.catcols = catcols
 
         embed_dim_sum = 0
-        self.embed = {}
-        self.drop1 = {}
+        self.embed_lists = nn.ModuleList()
         for col in catcols:
             num_unique_values = int(df[col].nunique())
             embed_dim = min((num_unique_values + 1) // 2, 50)
             embed_dim_sum += embed_dim
-            self.embed[col] = nn.Embedding(num_unique_values, embed_dim)
-            self.drop1[col] = nn.Dropout(p=0.3)
+            self.embed_lists.append(nn.Embedding(num_unique_values, embed_dim))
 
         self.bn1 = nn.BatchNorm1d(embed_dim_sum)
+        self.drop1 = nn.Dropout(p=0.3)
 
         self.fc2 = nn.Linear(embed_dim_sum, 300)
+        nn.init.kaiming_normal_(self.fc2.weight.data)
         self.relu2 = nn.ReLU()
         self.drop2 = nn.Dropout(p=0.3)
         self.bn2 = nn.BatchNorm1d(300)
 
         self.fc3 = nn.Linear(300, 300)
+        nn.init.kaiming_normal_(self.fc3.weight.data)
         self.relu3 = nn.ReLU()
         self.drop3 = nn.Dropout(p=0.3)
         self.bn3 = nn.BatchNorm1d(300)
 
-        self.fc4 = nn.Linear(300, 1)
+        self.fc4 = nn.Linear(300, 2)
+        nn.init.kaiming_normal_(self.fc4.weight.data)
+
+        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x: dict):
 
-        embeds = {}
-        for col in self.catcols:
-            embeds[col] = self.embed[col](x[col])
-            embeds[col] = self.drop1[col](embeds[col])
-
-        out = torch.cat([embeds[col] for col in self.catcols], dim=1)
+        out = torch.cat(
+            [l(x[col]) for l, col in zip(self.embed_lists, self.catcols)], dim=1
+        )
+        out = self.bn1(out)
+        out = self.drop1(out)
 
         out = self.fc2(out)
         out = self.relu2(out)
@@ -58,6 +121,7 @@ class EntityEmbed(nn.Module):
         out = self.bn3(out)
 
         out = self.fc4(out)
+        out = self.softmax(out)
 
         return out
 
@@ -65,10 +129,9 @@ class EntityEmbed(nn.Module):
 class EntityEmbedDataset(Dataset):
     def __init__(self, df: pd.DataFrame, catcols: list):
         super().__init__()
-
         self.len = len(df)
         self.catcols = catcols
-        self.y = df["target"].values
+        self.y = df["target"].values.reshape(-1, 1)
         self.X = {}
         for col in self.catcols:
             self.X[col] = df[col].values
@@ -84,7 +147,8 @@ class EntityEmbedDataset(Dataset):
 
 
 if __name__ == "__main__":
-    df = pd.read_csv("../input/train_folds.csv")
+    df = pd.read_csv("./chap05/input/train_folds.csv")
+    df = reduce_mem_usage(df)
 
     features = [f for f in df.columns if f not in ["id", "target", "kfold"]]
 
@@ -115,18 +179,17 @@ if __name__ == "__main__":
         pin_memory=True,
     )
 
-    criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.Adam(model.parameters())
+    criterion = nn.BCELoss()
+    optimizer = optim.Adam(model.parameters(), lr=9e-3)
 
     for epoch in range(20):
 
         model.train()
         train_loss = 0
         for _, (x, y) in enumerate(tqdm(dl_train, total=int(len(dl_train)))):
-            b = len(y)
-            y = torch.unsqueeze(y, 1)
+            b = y.shape[0]
             optimizer.zero_grad()
-            outputs = model(x)
+            outputs = model(x)[:, 1].reshape(-1, 1)
             loss = criterion(outputs, y.float())
             loss.backward()
             optimizer.step()
@@ -138,10 +201,10 @@ if __name__ == "__main__":
             model.eval()
             valid_loss = 0
             for _, (x, y) in enumerate(tqdm(dl_valid, total=int(len(dl_valid)))):
-                b = len(y)
-                outputs = model(x)
-                y = y.detach().numpy()
-                outputs = outputs.detach().numpy()
+                b = y.shape[0]
+                outputs = model(x)[:, 1].reshape(-1, 1)
+                y = y.numpy()
+                outputs = outputs.numpy()
                 valid_loss += metrics.roc_auc_score(y, outputs) * b
             valid_loss /= len(ds_valid)
             print(valid_loss)

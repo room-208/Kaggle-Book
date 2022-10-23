@@ -18,6 +18,7 @@ keras = "*"
 torch = "*"
 tqdm = "*"
 nltk = "*"
+catboost = "*"
 
 [dev-packages]
 
